@@ -94,7 +94,7 @@ RADAR_DATA_COLUMNS_NAMES = ["type", "seq", "timestamp",
                             "waveform_wander", "wander_average", "waveform_wander_threshold", "someone_status", 
                             "waveform_jitter", "jitter_midean", "waveform_jitter_threshold", "move_status"]
 
-g_csi_phase_array = np.zeros(
+g_csi_amplitude_array = np.zeros(
     [CSI_DATA_INDEX, CSI_DATA_COLUMNS], dtype=np.int32)
 g_rssi_array = np.zeros(CSI_DATA_INDEX, dtype=np.int8)
 g_radio_header_pd = pd.DataFrame(np.zeros([10, len(
@@ -249,8 +249,6 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             else:
                 self.checkBox_router_auto_connect.setChecked(False)
 
-            self.QWidget_evaluate_info.hide()
-
         self.curve_subcarrier_range = np.array([10, 20])
         self.graphicsView_subcarrier.setYRange(
             self.curve_subcarrier_range[0], self.curve_subcarrier_range[1])
@@ -261,7 +259,7 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
 
         for i in range(CSI_DATA_COLUMNS):
             curve = self.graphicsView_subcarrier.plot(
-                g_csi_phase_array[:, i], name=str(i), pen=csi_vaid_subcarrier_color[i])
+                g_csi_amplitude_array[:, i], name=str(i), pen=csi_vaid_subcarrier_color[i])
             self.curve_subcarrier.append(curve)
 
         self.curve_rssi = self.graphicsView_rssi.plot(
@@ -349,9 +347,6 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             len(evaluate_STATISTICS_COLUMNS_NAMES), 3)
         self.model_evaluate_statistics.setHorizontalHeaderLabels(
             evaluate_STATISTICS_COLUMNS_NAMES)
-        self.tableView_evaluate_statistics.setModel(self.model_evaluate_statistics)
-        self.tableView_evaluate_statistics.horizontalHeader(
-        ).setSectionResizeMode(QHeaderView.ResizeToContents)
         self.model_evaluate_statistics.setItem(
             0, 0, QStandardItem('none static'))
         self.model_evaluate_statistics.setItem(1, 0, QStandardItem('none move'))
@@ -385,13 +380,6 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         self.checkBox_radar_model.released.connect(self.checkBox_radar_model_show)
         self.checkBox_display_eigenvalues_table.released.connect(
             self.checkBox_display_eigenvalues_table_show)
-
-        self.pushButton_evaluate_open_folder.released.connect(
-            self.pushButton_evaluate_open_folde_show)
-        self.pushButton_evaluate_start.released.connect(
-            self.pushButton_evaluate_start_show)
-        self.pushButton_evaluate_csi_start.released.connect(
-            self.pushButton_evaluate_csi_start_show)
 
         self.splitter_eigenvalues.setStretchFactor(0, 8)
         self.splitter_eigenvalues.setStretchFactor(1, 1)
@@ -537,10 +525,10 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
         b, a = signal.butter(8, wn, 'lowpass')
 
         if self.wave_filtering_flag:
-            self.median_filtering(g_csi_phase_array)
-            csi_filtfilt_data = signal.filtfilt(b, a, g_csi_phase_array.T).T
+            self.median_filtering(g_csi_amplitude_array)
+            csi_filtfilt_data = signal.filtfilt(b, a, g_csi_amplitude_array.T).T
         else:
-            csi_filtfilt_data = g_csi_phase_array
+            csi_filtfilt_data = g_csi_amplitude_array
 
         if self.curve_subcarrier_range[0] > csi_filtfilt_data.min() or self.curve_subcarrier_range[1] < csi_filtfilt_data.max():
             if csi_filtfilt_data.min() > 0 and self.curve_subcarrier_range[0] > csi_filtfilt_data.min():
@@ -901,67 +889,6 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
             self.pushButton_train_start.setText("start")
             self.pushButton_train_start.setStyleSheet("color: black")
 
-    def pushButton_evaluate_csi_start_show(self):
-        if self.pushButton_evaluate_csi_start.text() == "csi stop":
-            self.pushButton_evaluate_csi_start.setText("csi start")
-            self.pushButton_evaluate_csi_start.setStyleSheet("color: black")
-
-            command = "radar --csi_stop"
-            self.serial_queue_write.put(command)
-        else:
-            self.pushButton_evaluate_csi_start.setText("csi stop")
-            self.pushButton_evaluate_csi_start.setStyleSheet("color: red")
-
-            command = "radar --csi_start"
-            self.serial_queue_write.put(command)
-
-    def pushButton_evaluate_start_show(self):
-        print(f"{self.lineEdit_evaluate_open_folder.text()}")
-
-        if len(self.lineEdit_evaluate_open_folder.text()) == 0:
-            err = QErrorMessage(self)
-            err.setWindowTitle('Folder not selected')
-            err.showMessage("Please select the folder to be verified")
-            err.show()
-            return
-
-        message = QMessageBox.information(
-            self, 'Info', "Please make sure the device and PC are connected to the same router",
-            QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes)
-        if message == QMessageBox.Cancel:
-            return
-
-        # self.checkBox_statistics_auto_update.setChecked(False)
-
-        folder_path = self.lineEdit_evaluate_open_folder.text()
-
-        if self.pushButton_evaluate_csi_start.text() == 'csi stop':
-            self.pushButton_evaluate_csi_start_show()
-
-        self.QWidget_evaluate_info.show()
-        self.timer_evaluate_statistics.start()
-
-        g_radar_data_room_pd.iloc[:, :] = 0
-        g_radar_data_human_pd.iloc[:, :] = 0
-        g_move_record_pd.iloc[:, :] = 0
-        g_status_record_pd.iloc[:, :] = ''
-        g_radar_eigenvalue_array[:, :] = 0
-        g_radar_eigenvalue_threshold_array[:, :] = 0
-        g_radar_status_array[:, :] = 0
-        g_evaluate_statistics_array[:, :] = 0
-
-        evaluate_data_send_process = Process(
-            target=evaluate_data_send, args=(self.serial_queue_write, folder_path))
-        evaluate_data_send_process.start()
-
-    def pushButton_evaluate_open_folde_show(self):
-        try:
-            self.folder_path = QFileDialog.getExistingDirectory(
-                None, 'select evaluate folder', os.getcwd())
-            self.lineEdit_evaluate_open_folder.setText(self.folder_path)
-        except Exception as e:
-            print(e)
-
     def comboBox_command_show(self):
         self.lineEdit_command.setText(self.comboBox_command.currentText())
 
@@ -982,7 +909,7 @@ class DataGraphicalWindow(QMainWindow, Ui_MainWindow):
 
 def csi_data_handle(self, data):
     # Rotate data
-    g_csi_phase_array[:-1] = g_csi_phase_array[1:]
+    g_csi_amplitude_array[:-1] = g_csi_amplitude_array[1:]
     g_rssi_array[:-1] = g_rssi_array[1:]
     g_radio_header_pd.iloc[1:] = g_radio_header_pd.iloc[:-1]
 
@@ -990,7 +917,7 @@ def csi_data_handle(self, data):
     for i in range(CSI_DATA_COLUMNS):
         data_complex = complex(csi_raw_data[csi_vaid_subcarrier_index[i] * 2],
                                csi_raw_data[csi_vaid_subcarrier_index[i] * 2 - 1])
-        g_csi_phase_array[-1][i] = np.abs(data_complex)
+        g_csi_amplitude_array[-1][i] = np.abs(data_complex)
 
     g_rssi_array[-1] = data['rssi']
     g_radio_header_pd.loc[0] = data[1:len(CSI_DATA_COLUMNS_NAMES)-1]
