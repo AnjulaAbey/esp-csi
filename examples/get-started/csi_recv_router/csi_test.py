@@ -2,7 +2,8 @@ import subprocess
 import csv
 import time
 import threading
-
+import re
+import numpy as np
 # Define the command to run
 flash_monitor_cmd = ["idf.py", "-p", "/dev/ttyUSB0", "flash", "monitor"]
 
@@ -23,8 +24,12 @@ def write_to_csv(output_queue):
     csv_filename = 'esp-csi.csv'
     with open(csv_filename, mode='w', newline='') as csv_file:
         csv_writer = csv.writer(csv_file)
-        # Write the header
-        csv_writer.writerow(['Timestamp', 'CSI Data'])
+       # Write the header
+        csv_writer.writerow(['type', 'role', 'mac', 'rssi', 'rate', 'sig_mode', 'mcs', 'bandwidth', 'smoothing', 
+                             'not_sounding', 'aggregation', 'stbc', 'fec_coding', 'sgi', 'noise_floor', 
+                             'ampdu_cnt', 'channel', 'secondary_channel', 'local_timestamp', 'ant', 
+                             'sig_len', 'rx_state', 'real_time_set', 'real_timestamp', 'len', 'CSI_DATA', 
+                             'timestamp'])      
         while True:
             line = output_queue.get()
             if line is None:
@@ -32,11 +37,48 @@ def write_to_csv(output_queue):
             if "CSI_DATA" in line:  # Filter for lines containing "CSI_DATA"
                 # Get the current timestamp
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                # Extract the CSI data part from the line (modify as needed)
-                csi_data = line.split("CSI_DATA")[1].strip()
-                # Write the timestamp and CSI data to the CSV file
-                csv_writer.writerow([timestamp, csi_data])
 
+                # Remove the CSI_DATA prefix and split the rest of the line
+                csi_data_line = line.split("CSI_DATA,")[1]
+                fields = csi_data_line.split(",")
+                
+                # Parse relevant fields from the data
+                s_count = fields[0]
+                mac = fields[1]
+                rssi = fields[2]
+                rate = fields[3]
+                sig_mode = fields[4]
+                mcs = fields[5]
+                bandwidth = fields[6]
+                smoothing = fields[7]
+                not_sounding = fields[8]
+                aggregation = fields[9]
+                stbc = fields[10]
+                fec_coding = fields[11]
+                sgi = fields[12]
+                noise_floor = fields[13]
+                ampdu_cnt = fields[14]
+                channel = fields[15]
+                secondary_channel = fields[16]
+                local_timestamp = fields[17]
+                ant = fields[18]
+                sig_len = fields[19]
+                rx_state = fields[20]
+                real_time_set = fields[21]
+                real_timestamp = fields[22]
+                csi_data = fields[23:]
+                cleaned_data = [re.sub(r'[^\d-]', '', item) for item in csi_data]
+                int_data = list(map(int, cleaned_data))
+                formatted_data = np.array(int_data)
+                formatted_list = formatted_data.tolist()
+                # # CSI data is in the 24th field, enclosed in square brackets
+                # csi_data = ",".join(fields[23:]).strip('"[]')
+                length = len(csi_data)
+                # Write the row to CSV
+                csv_writer.writerow(['CSI_Data', 'STA', mac, rssi, rate, sig_mode, mcs, bandwidth, smoothing, 
+                                     not_sounding, aggregation, stbc, fec_coding, sgi, noise_floor, ampdu_cnt, 
+                                     channel, secondary_channel, local_timestamp, ant, sig_len, rx_state, 
+                                     real_time_set, real_timestamp, length, formatted_list, timestamp])
 # Function to run the command with a timeout
 def run_with_timeout(cmd, timeout, output_queue):
     def target():
@@ -68,4 +110,3 @@ run_with_timeout(flash_monitor_cmd, duration, output_queue)
 
 # Wait for the CSV writing thread to finish
 csv_thread.join()
-
